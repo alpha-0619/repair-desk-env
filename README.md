@@ -41,6 +41,8 @@ A pass rate on its own hides what moved. When someone changes the agent and open
 4. comments the pass rate against main, which tasks regressed and which got fixed, and attaches the per-task diff as JSON;
 5. fails if any task that passed on main fails on the branch, even when the total goes up.
 
+The workflow pins every action and the container image to an exact version.
+
 Example: widening `history-vote`'s search from 7 to 12 past complaints takes it from 11/20 to 10/20. The check shows more than the one-point drop: 2 tasks regressed, 1 got fixed, and 7 of 20 answers changed.
 
 `ci/test_ci.py` covers the comparison, the `--check` exit code, that the agent's folder holds neither the answers nor the grader, that separate processes score the same 11/20 as the in-process run, and that a crashing agent fails its tasks without stopping the run. It also runs an agent that skips the complaint and reads the answers file by its full path: 20/20 as a plain process, 0/20 in a container.

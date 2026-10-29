@@ -18,28 +18,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           path: head
 
       - name: Check out main (tasks, hidden answers, grader)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ github.base_ref }}
           path: base
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
       - name: Pull the sandbox image
-        run: docker pull python:3.11-slim
+        run: docker pull python:3.11-slim@sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60
 
       - name: Run the agent from main
-        run: python base/ci/run_suite.py --harness base --agents-from base --sandbox docker --out base.json
+        run: python base/ci/run_suite.py --harness base --agents-from base --sandbox docker --image python:3.11-slim@sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60 --out base.json
 
       - name: Run the agent from this branch
-        run: python base/ci/run_suite.py --harness base --agents-from head --sandbox docker --out head.json
+        run: python base/ci/run_suite.py --harness base --agents-from head --sandbox docker --image python:3.11-slim@sha256:673719e071ecf27434fd2635bbd8d00f49f4fdd81f243143438a42ced8bedf60 --out head.json
 
       - name: Compare
         run: |
@@ -47,7 +47,7 @@ jobs:
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the diff
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: agent-diff
           path: |
