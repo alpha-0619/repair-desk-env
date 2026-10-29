@@ -16,7 +16,7 @@ class HistoryVote:
     then checks the recall file for that system."""
     name = "history-vote"
 
-    def __init__(self, k=7):
+    def __init__(self, k=12):
         self.k = k
 
     def solve(self, task, env):
