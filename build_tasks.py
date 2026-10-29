@@ -45,7 +45,8 @@ def overlap(a, b):
 
 def main():
     complaints = json.loads((RAW / "complaints.json").read_text(encoding="utf-8"))["results"]
-    recalls = json.loads((RAW / "recalls.json").read_text(encoding="utf-8"))["results"]
+    recall_raw = json.loads((RAW / "recalls.json").read_text(encoding="utf-8"))
+    recalls = recall_raw["results"]
     rows, seen, repeats = [], set(), 0
     for c in complaints:
         systems = parse_components(c["components"])
@@ -83,6 +84,12 @@ def main():
     dump("history.jsonl", history)
     systems = sorted({s for r in rows for s in r["systems"]})
     (DATA / "systems.json").write_text(json.dumps(systems, indent=1), encoding="utf-8")
+    # The recall file the shop tools serve. Kept out of data/raw/ so the environment runs from a clean checkout.
+    (DATA / "recalls.json").write_text(json.dumps({
+        "vehicle": "{modelYear} {make} {model}".format(**recall_raw["_vehicle"]).title(),
+        "recalls": [{"campaign": r["NHTSACampaignNumber"], "component": r["Component"],
+                     "summary": " ".join(r["Summary"].split()), "remedy": " ".join(r["Remedy"].split())}
+                    for r in recalls]}, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"usable {len(rows)} (dropped {repeats} word-for-word repeats), "
           f"{len(rows) - len(eligible)} name a recall so can't be tasks, "
           f"tasks {len(test)}, history {len(history)} (dropped {near} near-copies of tasks), systems {len(systems)}")

@@ -1,0 +1,62 @@
+name: agent check
+
+# On every pull request, run the agent from main and the agent from the branch on the
+# same tasks, with the tasks, hidden answers and grader taken from main. Post the
+# pass rate against main, which tasks regressed and which got fixed, and fail the
+# check if anything that passed on main fails on the branch.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  agent-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@v4
+        with:
+          path: head
+
+      - name: Check out main (tasks, hidden answers, grader)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the agent from main
+        run: python base/ci/run_suite.py --harness base --agents-from base --out base.json
+
+      - name: Run the agent from this branch
+        run: python base/ci/run_suite.py --harness base --agents-from head --out head.json
+
+      - name: Compare
+        run: |
+          python base/ci/compare.py base.json head.json --json diff.json --markdown summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-diff
+          path: |
+            diff.json
+            base.json
+            head.json
+
+      - name: Comment on the pull request
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file summary.md
+
+      - name: Fail if any task regressed
+        run: python base/ci/compare.py base.json head.json --check

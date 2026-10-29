@@ -20,11 +20,9 @@ def _load_jsonl(name):
 
 class ShopEnv:
     def __init__(self):
-        raw = json.loads((DATA / "raw" / "recalls.json").read_text(encoding="utf-8"))
-        self.vehicle = "{modelYear} {make} {model}".format(**raw["_vehicle"]).title()
-        self.recall_file = [{"campaign": r["NHTSACampaignNumber"], "component": r["Component"],
-                             "summary": " ".join(r["Summary"].split()), "remedy": " ".join(r["Remedy"].split())}
-                            for r in raw["results"]]
+        recalls = json.loads((DATA / "recalls.json").read_text(encoding="utf-8"))
+        self.vehicle = recalls["vehicle"]
+        self.recall_file = [dict(r) for r in recalls["recalls"]]
         self.history = _load_jsonl("history.jsonl")
         self.systems = json.loads((DATA / "systems.json").read_text(encoding="utf-8"))
         self.calls = []

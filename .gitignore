@@ -1,3 +1,4 @@
 data/raw/
 runs/*.jsonl
 __pycache__/
+runs/ci/
