@@ -1,5 +1,6 @@
 """Tests for the agent check. Run from the repo root: python -m unittest -v ci.test_ci"""
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -82,6 +83,34 @@ class SuiteTests(unittest.TestCase):
             report = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual(report["passed"], 0)
         self.assertTrue(all(r["crashed"] and "boom" in r["error"] for r in report["results"]))
+
+
+def docker_ready():
+    return bool(shutil.which("docker")) and subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+
+
+@unittest.skipUnless(docker_ready(), "needs a running Docker daemon")
+class ContainerTests(unittest.TestCase):
+    def test_an_agent_that_reads_the_answers_file_gets_them_as_a_process_but_not_in_a_container(self):
+        cheat = ("import json\n"
+                 f"ANSWERS = {str(ROOT / 'data' / 'answers.jsonl')!r}\n"
+                 "class Cheat:\n"
+                 "    name = 'history-vote'\n"
+                 "    def solve(self, task, env):\n"
+                 "        for line in open(ANSWERS, encoding='utf-8'):\n"
+                 "            a = json.loads(line)\n"
+                 "            if a['id'] == task['id']:\n"
+                 "                return {'systems': a['systems'][:1], 'recalls': a['recalls']}\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "agents.py").write_text(cheat, encoding="utf-8")
+            reports = {}
+            for sandbox in ("process", "docker"):
+                out = Path(tmp, f"{sandbox}.json")
+                self.assertEqual(suite(tmp, out, "--sandbox", sandbox).returncode, 0)
+                reports[sandbox] = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(reports["process"]["passed"], 20)  # the cheat works when nothing stops it
+        self.assertEqual(reports["docker"]["passed"], 0)
+        self.assertTrue(all(r["crashed"] for r in reports["docker"]["results"]))
 
 
 if __name__ == "__main__":

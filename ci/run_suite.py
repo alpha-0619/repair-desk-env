@@ -5,16 +5,20 @@ agent code, agents.py, comes from --agents-from. A pull request can change the a
 but not the tasks, the answers or the grader it is scored by.
 
 Each task folder gets the task, the tool data, the shop tools and the agent code. The
-answers file never goes in, and grading happens out here after the agent process exits.
-This is process-level separation, not a security sandbox: a hosted version would run
-each task in a container with no network.
+answers file never goes in, and grading happens out here after the agent exits.
+
+--sandbox docker runs each task in a fresh container with no network, a read-only
+filesystem and only that task's folder mounted, so the agent has no path to the
+answers. --sandbox process (the default) only gives it its own folder and process:
+fine for trusted agents, but an agent that goes looking can still read the harness.
 
 Usage:
   python ci/run_suite.py --agents-from . --out runs/ci/local.json
-  python base/ci/run_suite.py --harness base --agents-from head --out head.json
+  python base/ci/run_suite.py --harness base --agents-from head --sandbox docker --out head.json
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,13 +28,25 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 TOOL_DATA = ["history.jsonl", "systems.json", "recalls.json"]
+IMAGE = "python:3.11-slim"
+
+
+def agent_command(box, agent, sandbox, image):
+    if sandbox == "process":
+        env = {k: os.environ[k] for k in ("PATH", "SYSTEMROOT", "TEMP", "TMP") if k in os.environ}
+        return [sys.executable, "-I", "-B", "agent_runner.py", agent], env
+    user = ["--user", f"{os.getuid()}:{os.getgid()}"] if hasattr(os, "getuid") else []
+    return ["docker", "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp",
+            "--memory", "512m", "--cpus", "1", "--pids-limit", "128", *user,
+            "--mount", f"type=bind,source={box},target=/work", "-w", "/work",
+            image, "python", "-I", "-B", "agent_runner.py", agent], None
 
 
 def load_jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def run_task(task, agent, harness, agents_from, timeout):
+def run_task(task, agent, harness, agents_from, timeout, sandbox, image):
     with tempfile.TemporaryDirectory(prefix=f"task-{task['id']}-") as tmp:
         box = Path(tmp)
         (box / "data").mkdir()
@@ -41,10 +57,10 @@ def run_task(task, agent, harness, agents_from, timeout):
         shutil.copy(agents_from / "agents.py", box / "agents.py")
         (box / "task.json").write_text(json.dumps(task), encoding="utf-8")
         given = sorted(p.relative_to(box).as_posix() for p in box.rglob("*") if p.is_file())
+        cmd, env = agent_command(box, agent, sandbox, image)
         start = time.monotonic()
         try:
-            proc = subprocess.run([sys.executable, "-I", "agent_runner.py", agent], cwd=box,
-                                  capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(cmd, cwd=box, env=env, capture_output=True, text=True, timeout=timeout)
             crashed = proc.returncode != 0 or not (box / "out.json").exists()
             lines = proc.stderr.strip().splitlines()
             error = lines[-1] if crashed and lines else ""
@@ -62,6 +78,8 @@ def main():
     ap.add_argument("--agent", help="agent name; defaults to the harness's ci/config.json")
     ap.add_argument("--out", required=True)
     ap.add_argument("--timeout", type=float, default=60, help="seconds per task")
+    ap.add_argument("--sandbox", choices=["process", "docker"], default="process")
+    ap.add_argument("--image", default=IMAGE, help="container image for --sandbox docker")
     args = ap.parse_args()
 
     harness, agents_from = Path(args.harness).resolve(), Path(args.agents_from).resolve()
@@ -77,7 +95,8 @@ def main():
 
     results, given_files = [], None
     for task in tasks:
-        out, crashed, error, seconds, given = run_task(task, agent, harness, agents_from, args.timeout)
+        out, crashed, error, seconds, given = run_task(task, agent, harness, agents_from, args.timeout,
+                                                       args.sandbox, args.image)
         given_files = given_files or given
         answer, truth = out.get("answer") or {}, answers[task["id"]]
         if crashed:
@@ -87,7 +106,8 @@ def main():
         results.append({"id": task["id"], **graded, "crashed": crashed, "error": error, "seconds": seconds,
                         "answer": answer, "truth": truth, "tool_calls": out.get("tool_calls", [])})
 
-    report = {"agent": agent, "agents_from": agents_from.name, "passed": sum(r["pass"] for r in results),
+    report = {"agent": agent, "agents_from": agents_from.name, "sandbox": args.sandbox,
+              "passed": sum(r["pass"] for r in results),
               "total": len(results), "files_given_to_agent": given_files, "results": results}
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

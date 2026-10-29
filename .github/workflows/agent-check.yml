@@ -32,11 +32,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Pull the sandbox image
+        run: docker pull python:3.11-slim
+
       - name: Run the agent from main
-        run: python base/ci/run_suite.py --harness base --agents-from base --out base.json
+        run: python base/ci/run_suite.py --harness base --agents-from base --sandbox docker --out base.json
 
       - name: Run the agent from this branch
-        run: python base/ci/run_suite.py --harness base --agents-from head --out head.json
+        run: python base/ci/run_suite.py --harness base --agents-from head --sandbox docker --out head.json
 
       - name: Compare
         run: |

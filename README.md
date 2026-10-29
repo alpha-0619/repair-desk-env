@@ -36,21 +36,23 @@ From `runs/report.md`:
 A pass rate on its own hides what moved. When someone changes the agent and opens a pull request, the check:
 
 1. runs the agent from main and the agent from the branch on all 20 tasks;
-2. gives each task its own folder and process, with the task, the tools and the agent code, but never the answers file;
-3. grades both runs with the tasks, answers and grader from main, so a branch can't change what it is scored against;
+2. gives each task a fresh container with no network and a read-only filesystem, holding only the task, the tools and the agent code, never the answers file;
+3. grades both runs outside the containers, with the tasks, answers and grader from main, so changing the agent doesn't change what it is scored against;
 4. comments the pass rate against main, which tasks regressed and which got fixed, and attaches the per-task diff as JSON;
 5. fails if any task that passed on main fails on the branch, even when the total goes up.
 
 Example: widening `history-vote`'s search from 7 to 12 past complaints takes it from 11/20 to 10/20. The check shows more than the one-point drop: 2 tasks regressed, 1 got fixed, and 7 of 20 answers changed.
 
-`ci/test_ci.py` covers the comparison, the `--check` exit code, that the agent's folder holds neither the answers nor the grader, that separate processes score the same 11/20 as the in-process run, and that a crashing agent fails its tasks without stopping the run.
+`ci/test_ci.py` covers the comparison, the `--check` exit code, that the agent's folder holds neither the answers nor the grader, that separate processes score the same 11/20 as the in-process run, and that a crashing agent fails its tasks without stopping the run. It also runs an agent that skips the complaint and reads the answers file by its full path: 20/20 as a plain process, 0/20 in a container.
 
 ## Limits
 
 - The outcome here is NHTSA's component coding plus the recall file, matched at system level (for example `FUEL SYSTEM, GASOLINE`). A repair order with the technician's finding, and whether the car came back, would be a stronger label.
 - 20 tasks on one vehicle: enough to show the grader separates good, lazy and made-up answers, not enough to rank models.
 - `search_history` is word overlap. A real environment would expose the tools a shop actually uses.
-- The agent check separates folders and processes, not machines. A hosted version would run each task in a container with no network.
+- Run locally without `--sandbox docker`, the check uses plain processes. That keeps honest agents apart but doesn't stop one that goes looking, as the test above shows. CI always uses containers.
+- The workflow file lives in the repository, so a pull request can edit the check itself. A hosted service would keep the tasks, answers and grader outside the team's repository.
+- Each task runs once, which is enough for these deterministic agents. An LLM agent answers differently from run to run, so its check needs several runs per task and should only flag a regression bigger than that spread.
 - The agents are scripted baselines. No LLM agent has been run against these tasks yet.
 
 ## Run it
@@ -67,8 +69,8 @@ python run_eval.py
 The agent check, locally:
 
 ```
-python ci/run_suite.py --agents-from . --out runs/ci/main.json
-python ci/run_suite.py --agents-from path/to/other/checkout --out runs/ci/branch.json
+python ci/run_suite.py --agents-from . --sandbox docker --out runs/ci/main.json
+python ci/run_suite.py --agents-from path/to/other/checkout --sandbox docker --out runs/ci/branch.json
 python ci/compare.py runs/ci/main.json runs/ci/branch.json
 python -m unittest -v ci.test_ci
 ```
